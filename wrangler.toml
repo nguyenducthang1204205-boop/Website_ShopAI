@@ -1,4 +1,4 @@
-name = "cf-ecommerce"
+name = "website-shopai"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
@@ -12,7 +12,7 @@ compatibility_flags = ["nodejs_compat"]
 binding = "DB"
 database_name = "ecommerce-db"
 
-database_id = "36cfb7db-08dd-4ee8-b427-c99b79a5b2ab"
+database_id = "9641d7b4-566c-4529-b3f7-ef55ac1fcf36"
 
 [[vectorize]]
 binding = "VECTORIZE"
