@@ -35,23 +35,29 @@ app.use('/api/admin/*', authMiddleware, adminMiddleware);
 app.route('/api/admin', adminRoutes);
 
 // ---------------------------------------------------------------------------
-// Phục vụ ảnh sản phẩm lưu trong R2: GET /images/<key>
-// (key ví dụ: products/<uuid>.jpg — xem src/routes/admin.ts phần upload)
+// Phục vụ ảnh sản phẩm đã upload (lưu trong bảng product_images của D1):
+// GET /images/<id> — xem src/routes/admin.ts phần upload
 // ---------------------------------------------------------------------------
-app.get('/images/*', async (c) => {
-  const key = c.req.path.replace(/^\/images\//, '');
-  const object = await c.env.MY_BUCKET.get(key);
+app.get('/images/:id{[0-9]+}', async (c) => {
+  const image = await c.env.DB.prepare(
+    'SELECT content_type, data FROM product_images WHERE id = ?'
+  )
+    .bind(Number(c.req.param('id')))
+    .first<{ content_type: string; data: ArrayBuffer | number[] }>();
 
-  if (!object) {
+  if (!image) {
     return c.json({ error: 'Không tìm thấy ảnh.' }, 404);
   }
 
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set('etag', object.httpEtag);
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  // D1 có thể trả BLOB dưới dạng mảng số hoặc ArrayBuffer.
+  const body = image.data instanceof ArrayBuffer ? image.data : new Uint8Array(image.data);
 
-  return new Response(object.body, { headers });
+  return new Response(body, {
+    headers: {
+      'Content-Type': image.content_type,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------

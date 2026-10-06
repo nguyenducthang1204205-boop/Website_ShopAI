@@ -1,9 +1,9 @@
-# Đức Thắng — E-commerce trên Cloudflare (Workers + D1 + R2 + Hono)
+# Đức Thắng — E-commerce trên Cloudflare (Workers + D1 + Hono)
 
 Full-stack e-commerce chạy hoàn toàn trên Cloudflare edge:
 - **Backend**: Cloudflare Workers + Hono.js (RESTful API)
 - **Database**: Cloudflare D1 (SQLite)
-- **Ảnh sản phẩm**: Cloudflare R2
+- **Ảnh sản phẩm**: ảnh mẫu tĩnh trong `public/img/products/`, ảnh admin upload lưu trong D1 (không cần R2)
 - **Frontend**: HTML + Tailwind CSS (CDN, mobile-first) + vanilla JS, phục vụ qua Workers Static Assets
 - **Auth**: JWT (`hono/jwt`) kèm phân quyền `user` / `admin`
 - **Tìm kiếm & lọc**: API sản phẩm hỗ trợ tìm không dấu, danh mục, khoảng giá và sắp xếp
@@ -26,16 +26,7 @@ wrangler d1 create ecommerce-db
 Lệnh trên trả về một khối cấu hình có `database_id`. Copy giá trị đó và dán vào
 `wrangler.toml`, thay cho `REPLACE_WITH_YOUR_D1_DATABASE_ID`.
 
-## 3. Tạo R2 Bucket
-
-```bash
-wrangler r2 bucket create ecommerce-images
-```
-
-Tên bucket phải khớp với `bucket_name = "ecommerce-images"` trong `wrangler.toml`
-(nếu bạn đổi tên, nhớ sửa lại cả hai chỗ).
-
-## 4. Chạy migration cho schema.sql
+## 3. Chạy migration cho schema.sql
 
 Chỉ dùng bước này cho **D1 database mới, chưa có dữ liệu**. `schema.sql` khởi tạo lại các bảng và chèn sản phẩm mẫu.
 
@@ -49,11 +40,11 @@ wrangler d1 execute ecommerce-db --local --file=./schema.sql
 wrangler d1 execute ecommerce-db --remote --file=./schema.sql
 ```
 
-Lệnh này tạo các bảng (`users`, `categories`, `products`, `orders`, `order_items`) và chèn 19 sản phẩm mẫu thuộc 5 danh mục: Bàn phím, Chuột, Tai nghe, Màn hình, PC Gaming.
+Lệnh này tạo các bảng (`users`, `categories`, `products`, `product_images`, `orders`, `order_items`) và chèn 19 sản phẩm mẫu thuộc 5 danh mục: Bàn phím, Chuột, Tai nghe, Màn hình, PC Gaming.
 
 Với database đã có dữ liệu, **không chạy lại `schema.sql`** vì lệnh này xoá toàn bộ bảng cũ.
 
-## 5. Cấu hình Vectorize
+## 4. Cấu hình Vectorize
 
 Tạo index một lần trong Cloudflare account:
 ```bash
@@ -64,7 +55,7 @@ wrangler vectorize create shoplite-products --dimensions=1024 --metric=cosine
 
 Sau khi deploy và đã đăng nhập bằng tài khoản admin, mở **Quản lý sản phẩm** và bấm **Re-index sản phẩm** để tạo embedding cho toàn bộ sản phẩm hiện có. Thao tác tạo/sửa/xóa sản phẩm cũng tự đồng bộ Vectorize; nếu đồng bộ gặp lỗi, thay đổi D1 vẫn được giữ và lỗi được ghi vào Worker log.
 
-## 6. Chạy thử ở local
+## 5. Chạy thử ở local
 
 ```bash
 npm run dev
@@ -73,7 +64,7 @@ npm run dev
 Mặc định Wrangler sẽ serve tại `http://localhost:8787`. Trang chủ ở
 `http://localhost:8787/index.html`.
 
-## 7. Tạo tài khoản Admin đầu tiên
+## 6. Tạo tài khoản Admin đầu tiên
 
 Không có sẵn tài khoản admin — mọi tài khoản đăng ký qua `/register.html` đều
 có `role = 'user'` (vì lý do bảo mật, endpoint đăng ký công khai không cho
@@ -92,7 +83,7 @@ wrangler d1 execute ecommerce-db --remote --command \
 
 Đăng xuất rồi đăng nhập lại để JWT mới chứa `role: 'admin'`.
 
-## 8. Deploy lên Cloudflare
+## 7. Deploy lên Cloudflare
 
 ```bash
 # Bắt buộc trước khi deploy production: đặt JWT_SECRET bằng secret thật,
@@ -102,16 +93,16 @@ wrangler secret put JWT_SECRET
 npm run deploy
 ```
 
-## 9. Cấu trúc thư mục
+## 8. Cấu trúc thư mục
 
 ```
 cf-ecommerce/
-├── wrangler.toml            # Binding D1, R2, Workers AI, Vectorize, rate limiter, Assets
+├── wrangler.toml            # Binding D1, Workers AI, Vectorize, rate limiter, Assets
 ├── schema.sql                # Schema D1 hiện tại và dữ liệu mẫu
 ├── package.json
 ├── tsconfig.json
 ├── src/
-│   ├── index.ts              # App Hono chính, mount routes, serve ảnh từ R2
+│   ├── index.ts              # App Hono chính, mount routes, serve ảnh upload từ D1
 │   ├── types.ts               # Kiểu Env, JwtPayload, các Row type
 │   ├── middleware/
 │   │   └── auth.ts            # authMiddleware (verify JWT) + adminMiddleware
@@ -125,7 +116,7 @@ cf-ecommerce/
 │       ├── products.ts        # GET /api/products với search/filter/sort
 │       ├── categories.ts      # GET /api/categories
 │       ├── chat.ts            # POST /api/chat
-│       ├── admin.ts           # CRUD sản phẩm, category, re-index, upload R2, orders
+│       ├── admin.ts           # CRUD sản phẩm, category, re-index, upload ảnh, orders
 │       └── orders.ts          # POST /api/orders, GET /api/user/orders
 └── public/                    # Front-end tĩnh (Tailwind CDN, mobile-first)
     ├── index.html              # Trang chủ / Cửa hàng (grid 1/2/4 cột)
@@ -135,9 +126,10 @@ cf-ecommerce/
     ├── checkout.html              # Thanh toán
     ├── orders.html                 # Lịch sử đơn hàng (user)
     ├── login.html / register.html
+    ├── img/products/           # Ảnh của 19 sản phẩm mẫu (WebP)
     ├── admin/
     │   ├── dashboard.html          # Thống kê doanh thu/đơn hàng
-    │   ├── products.html            # CRUD sản phẩm + upload ảnh lên R2
+    │   ├── products.html            # CRUD sản phẩm + upload ảnh (tự thu nhỏ trước khi gửi)
     │   └── orders.html               # Quản lý & cập nhật trạng thái đơn hàng
     └── js/
         ├── api.js                    # fetch wrapper, session (JWT) trong localStorage
@@ -147,7 +139,7 @@ cf-ecommerce/
 
 ```
 
-## 10. Danh sách API
+## 9. Danh sách API
 
 | Method | Endpoint                     | Quyền        | Mô tả |
 |--------|-------------------------------|--------------|-------|
@@ -164,13 +156,13 @@ cf-ecommerce/
 | DELETE | `/api/admin/products/:id`             | Admin        | Xoá sản phẩm |
 | POST   | `/api/admin/categories`              | Admin        | Tạo danh mục |
 | POST   | `/api/admin/products/reindex`        | Admin        | Re-index sản phẩm hiện có trong Vectorize |
-| POST   | `/api/admin/upload`                    | Admin        | Upload ảnh lên R2 (multipart, field `file`) |
+| POST   | `/api/admin/upload`                    | Admin        | Upload ảnh vào D1 (multipart, field `file`, tối đa 1.5MB) |
 | GET    | `/api/admin/orders`                     | Admin        | Danh sách đơn hàng (`?status=&page=&limit=`) |
 | GET    | `/api/admin/orders/:id`                  | Admin        | Chi tiết 1 đơn hàng kèm items |
 | PUT    | `/api/admin/orders/:id`                   | Admin        | Đổi trạng thái đơn hàng |
-| GET    | `/images/:key`                             | Public       | Phục vụ lại ảnh lưu trong R2 |
+| GET    | `/images/:id`                              | Public       | Phục vụ lại ảnh đã upload (lưu trong D1) |
 
-## 11. Ghi chú kỹ thuật
+## 10. Ghi chú kỹ thuật
 
 - **Mật khẩu**: băm bằng PBKDF2-SHA256 (100.000 vòng) qua Web Crypto API —
   không dùng bcrypt vì Workers runtime không có Node crypto module gốc.
@@ -179,9 +171,9 @@ cf-ecommerce/
 - **Tìm kiếm không dấu**: lọc tên, mô tả và tên danh mục sau khi chuẩn hóa Unicode tiếng Việt. Danh mục và khoảng giá được lọc đồng thời trong API; sắp xếp và phân trang được áp dụng sau lọc.
 - **Sản phẩm yêu thích**: danh sách lưu cục bộ trong `localStorage` (key `favorites`), cùng với giỏ hàng `localStorage` hiện tại. Không cần migration D1.
 - **Rate limit**: binding giới hạn 10 request mỗi IP trong 60 giây tại một Cloudflare location; đây là bộ giới hạn bảo vệ Workers AI, không thay thế chính sách rate-limit toàn cầu.
-- **Ảnh R2**: không cần bật public access cho bucket. Ảnh upload xong được
-  lưu key dạng `products/<uuid>.<ext>`, và app phục vụ lại qua route
-  `GET /images/:key` (đọc trực tiếp từ binding `MY_BUCKET`).
+- **Ảnh sản phẩm**: ảnh của sản phẩm mẫu là file tĩnh trong `public/img/products/`. Ảnh admin chọn từ máy
+  được trình duyệt thu nhỏ (cạnh dài 1000px, JPEG) rồi lưu vào bảng `product_images` của D1 và phục vụ qua
+  `GET /images/:id`. Không cần bật R2. Khi xoá sản phẩm hoặc đổi ảnh, ảnh cũ trong D1 được xoá theo.
 - **Static Assets**: nhờ `run_worker_first = ["/api/*", "/images/*"]` trong
   `wrangler.toml`, mọi request khác (html/css/js) được Cloudflare trả thẳng
   từ thư mục `public/` mà không tốn một lượt gọi Worker nào.

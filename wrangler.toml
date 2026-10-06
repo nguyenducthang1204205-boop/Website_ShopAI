@@ -31,14 +31,6 @@ namespace_id = "932715"
   limit = 10
   period = 60
 # ---------------------------------------------------------------------------
-# R2 Bucket binding — dùng để lưu ảnh sản phẩm
-# Tạo bucket bằng: wrangler r2 bucket create ecommerce-images
-# ---------------------------------------------------------------------------
-#[[r2_buckets]]
-#binding = "MY_BUCKET"
-#bucket_name = "ecommerce-images"
-
-# ---------------------------------------------------------------------------
 # Biến môi trường (KHÔNG dùng JWT_SECRET này khi deploy thật).
 # Khi deploy production, hãy chạy: wrangler secret put JWT_SECRET
 # để ghi đè giá trị này bằng secret được mã hoá.
@@ -47,7 +39,7 @@ namespace_id = "932715"
 JWT_SECRET = "dev-secret-change-me-please-1234567890"
 
 # ---------------------------------------------------------------------------
-# Static Assets (Front-End) — Worker chỉ can thiệp vào /api/* và /images/*.
+# Static Assets (Front-End) — Worker chỉ can thiệp vào /api/* và /images/* (ảnh upload lưu trong D1).
 # Mọi request khác (index.html, css, js, ...) được Cloudflare phục vụ thẳng
 # từ thư mục ./public mà không cần chạy qua Worker code.
 # ---------------------------------------------------------------------------

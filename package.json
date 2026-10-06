@@ -8,7 +8,6 @@
     "db:create": "wrangler d1 create ecommerce-db",
     "db:migrate:local": "wrangler d1 execute ecommerce-db --local --file=./schema.sql",
     "db:migrate:remote": "wrangler d1 execute ecommerce-db --remote --file=./schema.sql",
-    "bucket:create": "wrangler r2 bucket create ecommerce-images",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

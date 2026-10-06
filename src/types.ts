@@ -1,7 +1,6 @@
 // Các binding được khai báo trong wrangler.toml sẽ xuất hiện ở đây.
 export type Env = {
   DB: D1Database;
-  MY_BUCKET: R2Bucket;
   ASSETS: Fetcher;
   AI: Ai;
   VECTORIZE: Vectorize;

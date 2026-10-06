@@ -10,7 +10,9 @@ import {
 const admin = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
+// D1 giới hạn mỗi dòng ~2MB. Trang admin đã tự thu nhỏ ảnh trước khi gửi (thường < 300KB).
+const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024; // 1.5MB
+const STORED_IMAGE_URL = /^\/images\/(\d+)$/;
 
 type ProductBody = {
   name?: string;
@@ -33,6 +35,14 @@ async function validateCategoryId(
 
   const category = await db.prepare('SELECT id FROM categories WHERE id = ?').bind(categoryId).first();
   return category ? categoryId : undefined;
+}
+
+// Xoá ảnh đã upload (lưu trong D1) khi sản phẩm bị xoá hoặc đổi sang ảnh khác.
+async function deleteStoredImage(db: D1Database, imageUrl: string | null): Promise<void> {
+  const match = imageUrl ? STORED_IMAGE_URL.exec(imageUrl) : null;
+  if (!match) return;
+
+  await db.prepare('DELETE FROM product_images WHERE id = ?').bind(Number(match[1])).run();
 }
 
 async function syncProductIndex(env: Env, productId: number): Promise<void> {
@@ -158,6 +168,9 @@ admin.put('/products/:id', async (c) => {
     .bind(name, description, price, stock, imageUrl, categoryId, id)
     .first<ProductRow>();
 
+  if (updated && updated.image_url !== existing.image_url) {
+    await deleteStoredImage(c.env.DB, existing.image_url);
+  }
   if (updated) await syncProductIndex(c.env, updated.id);
 
   return c.json({ message: 'Cập nhật sản phẩm thành công.', data: updated });
@@ -168,10 +181,13 @@ admin.delete('/products/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'ID sản phẩm không hợp lệ.' }, 400);
 
-  const existing = await c.env.DB.prepare('SELECT id FROM products WHERE id = ?').bind(id).first();
+  const existing = await c.env.DB.prepare('SELECT id, image_url FROM products WHERE id = ?')
+    .bind(id)
+    .first<Pick<ProductRow, 'id' | 'image_url'>>();
   if (!existing) return c.json({ error: 'Không tìm thấy sản phẩm.' }, 404);
 
   await c.env.DB.prepare('DELETE FROM products WHERE id = ?').bind(id).run();
+  await deleteStoredImage(c.env.DB, existing.image_url);
   try {
     await deleteProductIndex(c.env.VECTORIZE, id);
   } catch (error) {
@@ -182,7 +198,7 @@ admin.delete('/products/:id', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// IMAGE UPLOAD (R2)
+// IMAGE UPLOAD (D1)
 // ---------------------------------------------------------------------------
 
 // POST /api/admin/upload  (multipart/form-data, field name: "file")
@@ -201,19 +217,20 @@ admin.post('/upload', async (c) => {
   }
 
   if (file.size > MAX_IMAGE_BYTES) {
-    return c.json({ error: 'Ảnh vượt quá dung lượng cho phép (tối đa 5MB).' }, 400);
+    return c.json({ error: 'Ảnh vượt quá dung lượng cho phép (tối đa 1.5MB).' }, 400);
   }
 
-  const extension = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
-  const key = `products/${crypto.randomUUID()}.${extension}`;
+  const image = await c.env.DB.prepare(
+    'INSERT INTO product_images (content_type, data) VALUES (?, ?) RETURNING id'
+  )
+    .bind(file.type, await file.arrayBuffer())
+    .first<{ id: number }>();
 
-  await c.env.MY_BUCKET.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type },
-  });
+  if (!image) return c.json({ error: 'Không lưu được ảnh.' }, 500);
 
-  // Ảnh được phục vụ lại qua route GET /images/:key (xem src/index.ts),
-  // nên không cần bật public access cho R2 bucket.
-  return c.json({ message: 'Tải ảnh lên thành công.', url: `/images/${key}`, key }, 201);
+  // Ảnh được phục vụ lại qua route GET /images/:id (xem src/index.ts).
+  const url = `/images/${image.id}`;
+  return c.json({ message: 'Tải ảnh lên thành công.', url }, 201);
 });
 
 // ---------------------------------------------------------------------------
